@@ -75,9 +75,31 @@ def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="He
     return fig
 
 
-def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None):
+
+
+def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None,
+                   surface_colorscale='twilight', cluster_palette='Dark24'):
     """
-    Интерактивная 3D поверхность + точки минимумов (plotly).
+    Интерактивная 3D поверхность + точки минимумов (plotly) с возможностью выбора цветовых палитр.
+
+    Параметры:
+    ----------
+    XI, YI, ZI : array-like
+        Массивы для построения 3D-поверхности.
+    minima_df : pd.DataFrame, optional
+        DataFrame с координатами минимумов и метками кластеров.
+    cluster_col : str, optional
+        Имя столбца в minima_df с метками кластеров.
+    surface_colorscale : str или list, default='twilight'
+        Цветовая палитра для поверхности (поддерживается любая из plotly).
+        Примеры: 'Viridis', 'Plasma', 'Cividis', 'Inferno', 'Twilight', 'Jet', 'Hot', и др.
+    cluster_palette : str или list, default='Dark24'
+        Цветовая палитра для кластеров (из plotly.express.colors.qualitative).
+        Примеры: 'Set1', 'Dark24', 'Plotly', 'Bold', 'Safe', 'Vivid', и др.
+
+    Возвращает:
+    ----------
+    plotly.graph_objects.Figure
     """
     # безопасные приведения
     XI = np.asarray(XI)
@@ -85,28 +107,56 @@ def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None):
     ZI = np.asarray(ZI)
 
     fig = go.Figure()
-    # Surface может содержать NaN — plotly покажет "дыры"
-    fig.add_trace(go.Surface(x=XI, y=YI, z=ZI, colorscale='Earth', opacity=0.9, showscale=False))
 
+    # Добавляем 3D-поверхность с выбранной цветовой палитрой
+    fig.add_trace(go.Surface(
+        x=XI, y=YI, z=ZI,
+        colorscale=surface_colorscale,
+        opacity=0.9,
+        showscale=False,
+        hoverinfo='skip'
+    ))
+
+    # Если переданы минимумы и колонка кластеров
     if minima_df is not None and cluster_col is not None:
         if cluster_col not in minima_df.columns:
-            # если колонки нет — ничего не рисуем, но не падаем
             fig.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=600)
             return fig
 
-        unique = sorted(pd_unique_safe(minima_df[cluster_col]))
-        palette = px.colors.qualitative.Dark24
-        for lab in unique:
+        unique_labels = sorted(pd_unique_safe(minima_df[cluster_col]))
+
+        # Получаем палитру кластеров
+        if isinstance(cluster_palette, str):
+            palette = getattr(px.colors.qualitative, cluster_palette, px.colors.qualitative.Dark24)
+        else:
+            palette = cluster_palette  # если передан список цветов
+
+        for lab in unique_labels:
             sub = minima_df[minima_df[cluster_col] == lab]
+            # Серый цвет для шумов (кластер -1)
             color = 'lightgray' if lab == -1 else palette[int(lab) % len(palette)]
             fig.add_trace(go.Scatter3d(
-                x=sub['X'], y=sub['Y'], z=sub['Z'] + 0.2,
+                x=sub['X'],
+                y=sub['Y'],
+                z=sub['Z'] + 0.2,  # чуть выше поверхности
                 mode='markers',
-                marker=dict(size=4, color=color),
-                name=f'cl{lab}'
+                marker=dict(size=5, color=color, symbol='circle'),
+                name=f'cl{lab}',
+                hovertemplate=f'Cluster: {lab}<br>X: %{{x}}<br>Y: %{{y}}<br>Z: %{{z}}<extra></extra>'
             ))
 
-    fig.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=600)
+    # Оформление
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=600,
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z'
+        ),
+        legend=dict(title="Clusters")
+    )
+
     return fig
 
 

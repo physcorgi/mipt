@@ -17,8 +17,26 @@ from clustering import run_kmeans, run_dbscan, run_agglomerative, run_gmm
 from visualization import grid_surface, plot_heatmap_matplotlib, plot_3d_plotly, plot_quiver
 from report import build_pdf_report
 
+
+
+
+
+
+
 st.set_page_config(layout="wide", page_title="Кластеризация точек на поверхности земли")
 st.title("Кластеризация точек на поверхности земли")
+
+
+
+
+
+
+
+
+
+
+
+
 
 #
 # Upload
@@ -37,6 +55,7 @@ except Exception as e:
 #
 # Sidebar: global scale controls (these don't trigger heavy compute by themselves)
 #
+
 st.sidebar.header("Scale & features")
 median_nn = median_nn_distance(df)
 st.sidebar.write("Median nearest-neighbor distance:", round(median_nn, 6))
@@ -239,13 +258,48 @@ with col1:
     st.pyplot(fig)
 with col2:
     st.subheader("3D surface (interactive)")
-    fig3 = plot_3d_plotly(XI, YI, ZI, minima_df=mins, cluster_col='cluster')
+
+    # Выбор цветовой палитры для поверхности
+    surface_palette = st.selectbox(
+        "Surface Color Palette",
+        options=[
+            'viridis', 'plasma', 'inferno', 'cividis', 'twilight',
+            'hot', 'jet', 'rainbow', 'electric', 'earth', 'thermal'
+        ],
+        format_func=str.title,
+        index=4,  # по умолчанию 'twilight'
+        key='surface_palette'
+    )
+
+    # Выбор палитры для кластеров
+    cluster_palette = st.selectbox(
+        "Cluster Color Palette",
+        options=[
+            'Dark24', 'Set1', 'Plotly', 'Bold', 'Safe', 'Vivid',
+            'Pastel1', 'Paired', 'Accent', 'Dark2'
+        ],
+        index=0,  # по умолчанию 'Dark24'
+        key='cluster_palette'
+    )
+
+    # Построение графика с выбранными палитрами
+    fig3 = plot_3d_plotly(
+        XI, YI, ZI,
+        minima_df=mins,
+        cluster_col='cluster',
+        surface_colorscale=surface_palette,
+        cluster_palette=cluster_palette
+    )
+
     st.plotly_chart(fig3, use_container_width=True)
 
-figq = plot_quiver(mins, scale=1.0, nmax=200)
-if figq:
-    st.subheader("Gradient vectors (sample)")
-    st.pyplot(figq)
+# После успешной загрузки df
+# st.subheader("Exploratory Data Analysis (EDA)")
+# run_eda(df)
+# figq = plot_quiver(mins, scale=1.0, nmax=200)
+# if figq:
+#     st.subheader("Gradient vectors (sample)")
+#     st.pyplot(figq)
 
 #
 # Outputs: CSV, PDF, ZIP
