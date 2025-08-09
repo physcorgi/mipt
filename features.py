@@ -204,3 +204,6 @@ def compute_geometric_features(df, R, R_basin=None, min_neighbors=6,
     out = out.fillna(0.0)
     out = out.replace([np.inf, -np.inf], 0.0)
     return out
+
+
+

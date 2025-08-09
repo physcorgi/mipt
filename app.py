@@ -17,8 +17,26 @@ from clustering import run_kmeans, run_dbscan, run_agglomerative, run_gmm
 from visualization import grid_surface, plot_heatmap_matplotlib, plot_3d_plotly, plot_quiver
 from report import build_pdf_report
 
+
+
+
+
+
+
 st.set_page_config(layout="wide", page_title="Кластеризация точек на поверхности земли")
 st.title("Кластеризация точек на поверхности земли")
+
+
+
+
+
+
+
+
+
+
+
+
 
 #
 # Upload
@@ -37,6 +55,7 @@ except Exception as e:
 #
 # Sidebar: global scale controls (these don't trigger heavy compute by themselves)
 #
+
 st.sidebar.header("Scale & features")
 median_nn = median_nn_distance(df)
 st.sidebar.write("Median nearest-neighbor distance:", round(median_nn, 6))
@@ -235,17 +254,66 @@ if do_watershed:
 col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("2D heatmap + clusters")
-    fig = plot_heatmap_matplotlib(XI, YI, ZI, minima_df=mins, clusters='cluster', title="Heatmap + minima clusters")
-    st.pyplot(fig)
+
+    # Используем ТУ ЖЕ палитру, что и в 3D
+    selected_cmap = st.session_state.get('surface_palette', 'twilight')
+
+    fig2d = plot_heatmap_matplotlib(
+        XI, YI, ZI,
+        minima_df=mins,
+        clusters='cluster',
+        title="Heatmap + minima clusters",
+        cmap=selected_cmap  # <-- передаём выбранную палитру
+    )
+    st.pyplot(fig2d)
 with col2:
     st.subheader("3D surface (interactive)")
-    fig3 = plot_3d_plotly(XI, YI, ZI, minima_df=mins, cluster_col='cluster')
+
+    # График 3D строится выше
+    fig3 = plot_3d_plotly(
+        XI, YI, ZI,
+        minima_df=mins,
+        cluster_col='cluster',
+        surface_colorscale=st.session_state.get('surface_palette', 'twilight'),
+        cluster_palette=st.session_state.get('cluster_palette', 'Dark24')
+    )
     st.plotly_chart(fig3, use_container_width=True)
 
-figq = plot_quiver(mins, scale=1.0, nmax=200)
-if figq:
-    st.subheader("Gradient vectors (sample)")
-    st.pyplot(figq)
+    # === Элементы управления ПОД графиком ===
+    with st.container():
+        st.markdown("---")
+        st.caption("🎨 Adjust color schemes:")
+
+        # Выбор палитры для surface (влияет на 2D и 3D)
+        surface_palette = st.selectbox(
+            "Surface Color Palette",
+            options=[
+                'viridis', 'plasma', 'inferno', 'cividis', 'twilight',
+                'hot', 'jet', 'rainbow', 'coolwarm', 'terrain', 'ocean'
+            ],
+            format_func=str.title,
+            index=4,  # default: 'twilight'
+            key='surface_palette'
+        )
+
+        # Выбор палитры для кластеров (только для точек)
+        cluster_palette = st.selectbox(
+            "Cluster Color Palette",
+            options=[
+                'Dark24', 'Set1', 'Plotly', 'Bold', 'Safe', 'Vivid',
+                'Pastel1', 'Paired', 'Accent', 'Dark2'
+            ],
+            index=0,
+            key='cluster_palette'
+        )
+
+# После успешной загрузки df
+# st.subheader("Exploratory Data Analysis (EDA)")
+# run_eda(df)
+# figq = plot_quiver(mins, scale=1.0, nmax=200)
+# if figq:
+#     st.subheader("Gradient vectors (sample)")
+#     st.pyplot(figq)
 
 #
 # Outputs: CSV, PDF, ZIP
@@ -256,13 +324,16 @@ st.download_button("Download minima CSV", data=csv_bytes, file_name="minima_with
 imgs = []
 # heatmap image
 try:
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
-    buf.seek(0)
-    imgs.append(("heatmap.png", buf.getvalue()))
-    buf.close()
-except Exception:
-    pass
+    with io.BytesIO() as buf:
+        fig2d.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+        buf.seek(0)
+        img_data = buf.getvalue()  # считываем ДО закрытия
+        imgs.append(("heatmap.png", img_data))
+    # buf автоматически закрывается при выходе из `with`
+except Exception as e:
+    st.error(f"Error saving heatmap: {e}")
+
+
 # 3d surface image
 try:
     png3 = fig3.to_image(format="png", width=900, height=600, scale=1)
