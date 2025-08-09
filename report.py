@@ -4,24 +4,31 @@ import tempfile, os, json
 
 class PDFReport(FPDF):
     def header(self):
+        # Заголовок PDF-отчёта
         self.set_font('Helvetica', 'B', 14)
-        self.cell(0, 10, 'Terrain minima clustering report', ln=1, align='C')
+        self.cell(0, 10, 'Отчёт по кластеризации минимумов рельефа', ln=1, align='C')
         self.ln(2)
 
 def build_pdf_report(title, parameters, summary_tables, image_files_bytes):
     """
+    Генерирует PDF-отчёт.
+
     parameters: dict
-    summary_tables: dict of pandas.DataFrame
-    image_files_bytes: list of tuples (filename, bytes)
-    returns pdf bytes
+        Словарь параметров расчёта.
+    summary_tables: dict[str, pandas.DataFrame]
+        Набор сводных таблиц (имя -> DataFrame).
+    image_files_bytes: list[tuple[str, bytes]]
+        Список картинок в формате (имя_файла, байты).
+    Возвращает: bytes
+        Содержимое PDF.
     """
     pdf = PDFReport()
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 6, f"Title: {title}", ln=1)
+    pdf.cell(0, 6, f"Название: {title}", ln=1)
     pdf.ln(2)
-    pdf.cell(0, 6, "Parameters:", ln=1)
+    pdf.cell(0, 6, "Параметры:", ln=1)
     for k,v in parameters.items():
         pdf.cell(0, 6, f"- {k}: {v}", ln=1)
     pdf.ln(4)
