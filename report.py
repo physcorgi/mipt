@@ -1,6 +1,6 @@
 # report.py
 from fpdf import FPDF
-import tempfile, os, json
+import tempfile, os, json, io
 import matplotlib.font_manager as fm
 
 class PDFReport(FPDF):
@@ -74,10 +74,15 @@ def build_pdf_report(title, parameters, summary_tables, image_files_bytes):
         pdf.cell(0,6, fname, ln=1)
         pdf.image(tmp.name, x=15, w=180)
         os.unlink(tmp.name)
-    # Возвращаем байты напрямую, не перекодируя в latin-1
-    out = pdf.output(dest='S')
+    # Записываем во временный файл и возвращаем байты, чтобы избежать проблем с перекодировками
+    fd, tmp_pdf_path = tempfile.mkstemp(suffix='.pdf')
+    os.close(fd)
     try:
-        return bytes(out)
-    except Exception:
-        # На случай, если библиотека вернула str — кодируем в UTF-8
-        return str(out).encode('utf-8')
+        pdf.output(tmp_pdf_path)
+        with open(tmp_pdf_path, 'rb') as f:
+            return f.read()
+    finally:
+        try:
+            os.remove(tmp_pdf_path)
+        except Exception:
+            pass

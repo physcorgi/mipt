@@ -289,12 +289,11 @@ except Exception:
     sil = None
 st.write("Силуэт (silhouette):", sil)
 
-# Если был автоподбор, покажем лидерборд
 if 'auto_leaderboard' in st.session_state and st.session_state.auto_leaderboard:
     st.write("Лидерборд автоподбора (выше — лучше):")
     st.dataframe(pd.DataFrame(st.session_state.auto_leaderboard).sort_values('silhouette', ascending=False), use_container_width=True)
 
-# Авто‑описание кластеров (простые правила на основе агрегированных метрик)
+# Авто‑описание кластеров (улучшенное)
 def _categorize(value, low, high):
     if value <= low:
         return "низкий"
@@ -302,57 +301,89 @@ def _categorize(value, low, high):
         return "высокий"
     return "средний"
 
+def _orientation_to_cardinal(angle_rad: float) -> str:
+    # angle in degrees, map to 8-wind rose
+    deg = (np.degrees(angle_rad) + 360.0) % 360.0
+    labels = [
+        "Восток", "С‑В", "Север", "С‑З", "Запад", "Ю‑З", "Юг", "Ю‑В"
+    ]
+    idx = int((deg + 22.5) // 45) % 8
+    return labels[idx]
+
 try:
+    agg = {
+        'cluster': 'size'
+    }
     profile = mins.groupby('cluster').agg(
         count=('cluster', 'size'),
-        depth_mean=('depth', 'mean'),
-        basin_area_mean=('basin_area_est', 'mean'),
-        grad_mean=('mean_grad', 'mean'),
-        H_mean=('mean_curvature', 'mean'),
-        K_mean=('gauss_curvature', 'mean'),
-        ori_sin_mean=('ori_sin', 'mean'),
-        ori_cos_mean=('ori_cos', 'mean'),
+        depth_mean=('depth', 'mean'), depth_min=('depth', 'min'), depth_max=('depth', 'max'),
+        basin_area_mean=('basin_area_est', 'mean'), basin_area_std=('basin_area_est', 'std'),
+        grad_mean=('mean_grad', 'mean'), grad_median=('mean_grad', 'median'),
+        H_mean=('mean_curvature', 'mean'), K_mean=('gauss_curvature', 'mean'),
+        ori_sin_mean=('ori_sin', 'mean'), ori_cos_mean=('ori_cos', 'mean')
     ).reset_index()
     profile['orientation'] = np.arctan2(profile['ori_sin_mean'], profile['ori_cos_mean'])
+
     for col in ['depth_mean', 'basin_area_mean', 'grad_mean', 'H_mean', 'K_mean']:
         lo = profile[col].quantile(0.33)
         hi = profile[col].quantile(0.67)
         profile[f'{col}_cat'] = profile[col].apply(lambda v, lo=lo, hi=hi: _categorize(v, lo, hi))
 
+    def _name_cluster(r):
+        if r['depth_mean_cat'] == 'высокий' and r['basin_area_mean_cat'] == 'высокий':
+            return "глубокие широкие впадины"
+        if r['depth_mean_cat'] == 'высокий' and r['grad_mean_cat'] == 'высокий':
+            return "глубокие крутые локальные впадины"
+        if r['depth_mean_cat'] == 'низкий' and r['basin_area_mean_cat'] == 'высокий':
+            return "пологие широкие чаши"
+        if r['grad_mean_cat'] == 'высокий':
+            return "крутые локальные формы"
+        return "умеренные впадины"
+
     def _describe_row(r):
         parts = []
-        parts.append(f"глубина: {r['depth_mean_cat']}")
-        parts.append(f"площадь бассейна: {r['basin_area_mean_cat']}")
-        parts.append(f"градиент: {r['grad_mean_cat']}")
-        parts.append(f"средняя кривизна H: {r['H_mean_cat']}")
-        parts.append(f"гауссова кривизна K: {r['K_mean_cat']}")
-        ang_deg = float(np.degrees(r['orientation']))
-        parts.append(f"ориентация (средн.): {ang_deg:.1f}°")
+        parts.append(f"тип: {_name_cluster(r)}")
+        parts.append(f"размер: n={int(r['count'])}")
+        parts.append(f"глубина: {r['depth_mean_cat']} (ср={r['depth_mean']:.3f}, мин={r['depth_min']:.3f}, макс={r['depth_max']:.3f})")
+        parts.append(f"площадь бассейна: {r['basin_area_mean_cat']} (ср={r['basin_area_mean']:.3f}, σ={0.0 if np.isnan(r['basin_area_std']) else float(r['basin_area_std']):.3f})")
+        parts.append(f"градиент: {r['grad_mean_cat']} (ср={r['grad_mean']:.3f}, мед={r['grad_median']:.3f})")
+        parts.append(f"кривизны: H={r['H_mean_cat']} (ср={r['H_mean']:.3f}); K={r['K_mean_cat']} (ср={r['K_mean']:.3f})")
+        parts.append(f"ориентация: {_orientation_to_cardinal(r['orientation'])} (≈{np.degrees(r['orientation']):.0f}°)")
         return "; ".join(parts)
 
+    profile['name'] = profile.apply(_name_cluster, axis=1)
     profile['description'] = profile.apply(_describe_row, axis=1)
     st.subheader("Описание кластеров")
-    st.dataframe(profile[['cluster', 'count', 'depth_mean', 'basin_area_mean', 'grad_mean', 'H_mean', 'K_mean', 'description']])
-    desc_json = profile[['cluster', 'description']].to_json(orient='records', force_ascii=False).encode('utf-8')
+    st.dataframe(profile[['cluster', 'name', 'count', 'depth_mean', 'basin_area_mean', 'grad_mean', 'H_mean', 'K_mean', 'description']], use_container_width=True)
+    # Экспорт описаний
+    desc_json = profile[['cluster', 'name', 'description']].to_json(orient='records', force_ascii=False).encode('utf-8')
     st.download_button("Скачать описания кластеров (JSON)", data=desc_json, file_name="cluster_descriptions.json", mime="application/json")
+    desc_csv = profile[['cluster', 'name', 'description']].to_csv(index=False).encode('utf-8')
+    st.download_button("Скачать описания кластеров (CSV)", data=desc_csv, file_name="cluster_descriptions.csv", mime="text/csv")
 except Exception:
     pass
 
-# Справка по признакам и формулам
+# Справка по признакам и формулам (стабильный рендер LaTeX)
 with st.expander("Справка: определения признаков и формулы"):
-    st.markdown(r"""
-    - depth: \(\text{depth}_i = \max(0, \,\overline{z_{\mathcal{N}(i)}} - z_i)\)
-    - Порог бассейна: \(\text{thr}_i = z_i + \text{depth}_i \cdot \text{frac}\);
-      площадь оценивается точками с \(z_j \le \text{thr}_i\) в радиусе \(R_{\text{basin}}\).
-    - Оценка площади бассейна: \(\widehat{A}_i = \pi R_{\text{basin}}^2 \cdot \frac{|\{j : z_j \le \text{thr}_i\}|}{|\mathcal{N}_{R_{\text{basin}}}(i)|}\)
-    - Локальная модель: \(z = A x^2 + B y^2 + C x y + D x + E y + F\)
-    - Градиент: \(\nabla z = (D, E)\), \(\text{mean\_grad} = \sqrt{D^2 + E^2}\)
-    - Кривизны:
-      \[ H = \frac{(1+E^2)\,2A - 2DE\,C + (1+D^2)\,2B}{2\,(1+D^2+E^2)^{3/2}} \]
-      \[ K = \frac{(2A)(2B) - C^2}{(1+D^2+E^2)^2} \]
-    - Ориентация: \(\theta = \mathrm{atan2}(E, D)\)
-    - Локальный минимум: \(z_i < z_j\) для всех \(j\) в радиусе \(R\) (или среди k ближайших).
-    """)
+    st.write("depth:")
+    st.latex(r"\mathrm{depth}_i = \max\bigl(0,\, \overline{z_{\mathcal{N}(i)}} - z_i\bigr)")
+    st.write("Порог бассейна:")
+    st.latex(r"\mathrm{thr}_i = z_i + \mathrm{depth}_i\cdot \mathrm{frac}")
+    st.write("В площадь попадают соседи при условии:")
+    st.latex(r"z_j \le \mathrm{thr}_i,\; j\in \mathcal{N}_{R_{\mathrm{basin}}}(i)")
+    st.write("Оценка площади бассейна:")
+    st.latex(r"\widehat{A}_i = \pi R_{\mathrm{basin}}^2\, \cdot \, \frac{\bigl|\{j\in \mathcal{N}_{R_{\mathrm{basin}}}(i): z_j \le \mathrm{thr}_i\}\bigr|}{\bigl|\mathcal{N}_{R_{\mathrm{basin}}}(i)\bigr|}")
+    st.write("Локальная модель поверхности:")
+    st.latex(r"z = A x^2 + B y^2 + C x y + D x + E y + F")
+    st.write("Градиент и его норма:")
+    st.latex(r"\nabla z = (\partial z/\partial x,\, \partial z/\partial y) = (D, E),\quad \mathrm{mean\_grad}=\sqrt{D^2+E^2}")
+    st.write("Кривизны (по квадратичной модели):")
+    st.latex(r"H = \dfrac{(1+E^2)\,2A - 2DE\,C + (1+D^2)\,2B}{2\,(1+D^2+E^2)^{3/2}}")
+    st.latex(r"K = \dfrac{(2A)(2B) - C^2}{(1+D^2+E^2)^2}")
+    st.write("Ориентация:")
+    st.latex(r"\theta = \mathrm{atan2}(E, D)")
+    st.write("Критерий локального минимума:")
+    st.latex(r"z_i < z_j\;\; \forall\, j\in\mathcal{N}_R(i) ")
 
 #
 # Visualizations + optional watershed
