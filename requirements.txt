@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+scipy
+scikit-learn
+scikit-image
+plotly
+matplotlib
+seaborn
+fpdf
+kaleido
