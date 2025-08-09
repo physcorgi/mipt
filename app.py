@@ -14,7 +14,7 @@ from utils import load_and_prepare, median_nn_distance
 from eda import run_eda
 from features import compute_geometric_features, find_local_minima
 from clustering import run_kmeans, run_dbscan, run_agglomerative, run_gmm, choose_param_by_silhouette
-from visualization import grid_surface, plot_heatmap_matplotlib, plot_3d_plotly, plot_quiver
+from visualization import grid_surface, plot_heatmap_matplotlib, plot_3d_plotly, plot_quiver, plot_watershed_matplotlib
 from report import build_pdf_report
 
 
@@ -475,6 +475,13 @@ if do_watershed:
         st.warning(f"Сегментация водоразделом не удалась: {e}")
         # Optionally log full traceback
         # import traceback; st.code(traceback.format_exc())
+    else:
+        # Карта бассейнов
+        try:
+            fig_ws = plot_watershed_matplotlib(XI, YI, labels_ws, minima_df=mins, title="Карта бассейнов (водораздел)")
+            st.pyplot(fig_ws)
+        except Exception:
+            fig_ws = None
 
 col1, col2 = st.columns([1, 1])
 with col1:
@@ -563,6 +570,16 @@ except Exception as e:
 try:
     png3 = fig3.to_image(format="png", width=900, height=600, scale=1)
     imgs.append(("3d_surface.png", png3))
+except Exception:
+    pass
+
+# watershed image (если построена карта бассейнов)
+try:
+    if do_watershed and 'fig_ws' in locals() and fig_ws is not None:
+        with io.BytesIO() as buf:
+            fig_ws.savefig(buf, format='png', bbox_inches='tight', dpi=150)
+            buf.seek(0)
+            imgs.append(("watershed.png", buf.getvalue()))
 except Exception:
     pass
 
