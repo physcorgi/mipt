@@ -136,17 +136,17 @@ else:
 default_feats = ['depth', 'basin_area_est', 'mean_grad', 'mean_curvature', 'gauss_curvature', 'ori_sin', 'ori_cos']
 available_feats = [f for f in default_feats if f in mins.columns]
 if not available_feats:
-    st.error("No clustering features available. Check compute step.")
+    st.error("Нет доступных признаков для кластеризации. Проверьте шаг вычисления признаков.")
     st.stop()
 
 feats = st.sidebar.multiselect("Признаки для кластеризации", options=available_feats,
                                default=available_feats[:min(5, len(available_feats))])
 if not feats:
-    st.error("Select at least one feature for clustering.")
+    st.error("Выберите хотя бы один признак для кластеризации.")
     st.stop()
 
 # ---
-# Автоподбор по силуэту ("киллер-фича"): перебор параметров нескольких алгоритмов
+#
 # и выбор лучшего по silhouette score. Сохраняем лидерборд в session_state.
 # ---
 st.sidebar.markdown("---")
@@ -293,6 +293,66 @@ st.write("Силуэт (silhouette):", sil)
 if 'auto_leaderboard' in st.session_state and st.session_state.auto_leaderboard:
     st.write("Лидерборд автоподбора (выше — лучше):")
     st.dataframe(pd.DataFrame(st.session_state.auto_leaderboard).sort_values('silhouette', ascending=False), use_container_width=True)
+
+# Авто‑описание кластеров (простые правила на основе агрегированных метрик)
+def _categorize(value, low, high):
+    if value <= low:
+        return "низкий"
+    if value >= high:
+        return "высокий"
+    return "средний"
+
+try:
+    profile = mins.groupby('cluster').agg(
+        count=('cluster', 'size'),
+        depth_mean=('depth', 'mean'),
+        basin_area_mean=('basin_area_est', 'mean'),
+        grad_mean=('mean_grad', 'mean'),
+        H_mean=('mean_curvature', 'mean'),
+        K_mean=('gauss_curvature', 'mean'),
+        ori_sin_mean=('ori_sin', 'mean'),
+        ori_cos_mean=('ori_cos', 'mean'),
+    ).reset_index()
+    profile['orientation'] = np.arctan2(profile['ori_sin_mean'], profile['ori_cos_mean'])
+    for col in ['depth_mean', 'basin_area_mean', 'grad_mean', 'H_mean', 'K_mean']:
+        lo = profile[col].quantile(0.33)
+        hi = profile[col].quantile(0.67)
+        profile[f'{col}_cat'] = profile[col].apply(lambda v, lo=lo, hi=hi: _categorize(v, lo, hi))
+
+    def _describe_row(r):
+        parts = []
+        parts.append(f"глубина: {r['depth_mean_cat']}")
+        parts.append(f"площадь бассейна: {r['basin_area_mean_cat']}")
+        parts.append(f"градиент: {r['grad_mean_cat']}")
+        parts.append(f"средняя кривизна H: {r['H_mean_cat']}")
+        parts.append(f"гауссова кривизна K: {r['K_mean_cat']}")
+        ang_deg = float(np.degrees(r['orientation']))
+        parts.append(f"ориентация (средн.): {ang_deg:.1f}°")
+        return "; ".join(parts)
+
+    profile['description'] = profile.apply(_describe_row, axis=1)
+    st.subheader("Описание кластеров")
+    st.dataframe(profile[['cluster', 'count', 'depth_mean', 'basin_area_mean', 'grad_mean', 'H_mean', 'K_mean', 'description']])
+    desc_json = profile[['cluster', 'description']].to_json(orient='records', force_ascii=False).encode('utf-8')
+    st.download_button("Скачать описания кластеров (JSON)", data=desc_json, file_name="cluster_descriptions.json", mime="application/json")
+except Exception:
+    pass
+
+# Справка по признакам и формулам
+with st.expander("Справка: определения признаков и формулы"):
+    st.markdown(r"""
+    - depth: \(\text{depth}_i = \max(0, \,\overline{z_{\mathcal{N}(i)}} - z_i)\)
+    - Порог бассейна: \(\text{thr}_i = z_i + \text{depth}_i \cdot \text{frac}\);
+      площадь оценивается точками с \(z_j \le \text{thr}_i\) в радиусе \(R_{\text{basin}}\).
+    - Оценка площади бассейна: \(\widehat{A}_i = \pi R_{\text{basin}}^2 \cdot \frac{|\{j : z_j \le \text{thr}_i\}|}{|\mathcal{N}_{R_{\text{basin}}}(i)|}\)
+    - Локальная модель: \(z = A x^2 + B y^2 + C x y + D x + E y + F\)
+    - Градиент: \(\nabla z = (D, E)\), \(\text{mean\_grad} = \sqrt{D^2 + E^2}\)
+    - Кривизны:
+      \[ H = \frac{(1+E^2)\,2A - 2DE\,C + (1+D^2)\,2B}{2\,(1+D^2+E^2)^{3/2}} \]
+      \[ K = \frac{(2A)(2B) - C^2}{(1+D^2+E^2)^2} \]
+    - Ориентация: \(\theta = \mathrm{atan2}(E, D)\)
+    - Локальный минимум: \(z_i < z_j\) для всех \(j\) в радиусе \(R\) (или среди k ближайших).
+    """)
 
 #
 # Visualizations + optional watershed
