@@ -133,7 +133,11 @@ else:
     eps = st.sidebar.slider("DBSCAN eps", 0.01, 5.0, 0.7, step=0.01)
     min_samp = st.sidebar.slider("DBSCAN min_samples", 2, 30, 4)
 
-default_feats = ['depth', 'basin_area_est', 'mean_grad', 'mean_curvature', 'gauss_curvature', 'ori_sin', 'ori_cos']
+default_feats = [
+    'depth', 'basin_area_est', 'mean_grad', 'mean_curvature', 'gauss_curvature', 'ori_sin', 'ori_cos',
+    # «киллер»-набор: многошкальные и морфометрические
+    'shape_index', 'curvedness', 'depth_r2', 'mean_grad_r2', 'mean_curvature_r2', 'gauss_curvature_r2'
+]
 available_feats = [f for f in default_feats if f in mins.columns]
 if not available_feats:
     st.error("Нет доступных признаков для кластеризации. Проверьте шаг вычисления признаков.")
