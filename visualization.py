@@ -27,10 +27,11 @@ def grid_surface(df, grid_res=200, method='linear'):
     return XI, YI, ZI
 
 
-def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="Heatmap"):
+def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="Heatmap", cmap='viridis'):
     """
     Рисует 2D тепловую карту (matplotlib). Поддерживает подсветку минимумов по колонке clusters.
     clusters может быть строкой (имя колонки в minima_df).
+    cmap: имя цветовой палитры matplotlib (например, 'viridis', 'plasma', 'twilight', и т.д.)
     """
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -42,11 +43,10 @@ def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="He
 
     # mask NaNs чтобы pcolormesh не ломался
     ZI_masked = np.ma.masked_invalid(ZI)
-    im = ax.pcolormesh(XI, YI, ZI_masked, shading='auto', cmap='terrain')
+    im = ax.pcolormesh(XI, YI, ZI_masked, shading='auto', cmap=cmap)
     fig.colorbar(im, ax=ax, label='Z')
 
     if minima_df is not None and clusters is not None:
-        # clusters может быть строкой (имя колонки) или массивом
         if isinstance(clusters, str):
             if clusters not in minima_df.columns:
                 ax.set_title(title + " (clusters column missing)")
@@ -56,10 +56,9 @@ def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="He
             labels = clusters
 
         unique = sorted(pd_unique_safe(labels))
-        # build palette with at least as many colors as unique labels (but at least 10)
         ncols = max(10, len(unique))
         palette = sns.color_palette('tab10', n_colors=ncols)
-        # plot each label
+
         for lab in unique:
             sub = minima_df[labels == lab]
             if lab == -1:
@@ -73,8 +72,6 @@ def plot_heatmap_matplotlib(XI, YI, ZI, minima_df=None, clusters=None, title="He
     ax.set_ylabel('Y')
     ax.axis('equal')
     return fig
-
-
 
 
 def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None,
@@ -116,6 +113,7 @@ def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None,
         showscale=False,
         hoverinfo='skip'
     ))
+
 
     # Если переданы минимумы и колонка кластеров
     if minima_df is not None and cluster_col is not None:
