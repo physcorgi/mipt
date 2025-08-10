@@ -144,7 +144,7 @@ def plot_3d_plotly(XI, YI, ZI, minima_df=None, cluster_col=None,
                 hovertemplate=f'Cluster: {lab}<br>X: %{{x}}<br>Y: %{{y}}<br>Z: %{{z}}<extra></extra>'
             ))
 
-    # Оформление
+    # Оформление этой хрени
     fig.update_layout(
         margin=dict(l=0, r=0, t=30, b=0),
         height=600,
@@ -215,10 +215,10 @@ def plot_watershed_matplotlib(XI, YI, labels_ws, minima_df=None, title="Карт
     unique = np.unique(labels_ws)
     unique = unique[unique != 0]
 
-    # Подготовим палитру на основе tab20/40
+
     n_colors = max(1, len(unique))
     base_colors = sns.color_palette('tab20', n_colors=max(20, n_colors))
-    lut = {0: (1, 1, 1, 0)}  # фон прозрачный/белый
+    lut = {0: (1, 1, 1, 0)}  
     for i, lab in enumerate(unique):
         lut[int(lab)] = base_colors[i % len(base_colors)]
 
