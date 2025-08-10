@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.interpolate import griddata
 import numpy as np
+from matplotlib.colors import ListedColormap
 
 # опционально: включает приятный стиль для matplotlib
 sns.set()
@@ -195,3 +196,48 @@ def pd_unique_safe(series_like):
             return sorted(list({str(x): x for x in arr}.values()))
     except Exception:
         return []
+
+
+def plot_watershed_matplotlib(XI, YI, labels_ws, minima_df=None, title="Карта бассейнов (водораздел)"):
+    """
+    Рисует карту бассейнов по результатам водораздела.
+
+    Параметры:
+    - XI, YI: координатные сетки
+    - labels_ws: 2D массив меток бассейнов (0 — фон)
+    - minima_df: DataFrame с минимумами; если содержит 'X','Y','cluster', отобразим точки
+    - title: заголовок
+    """
+    labels_ws = np.asarray(labels_ws)
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Собираем уникальные метки (кроме 0 фона)
+    unique = np.unique(labels_ws)
+    unique = unique[unique != 0]
+
+    # Подготовим палитру на основе tab20/40
+    n_colors = max(1, len(unique))
+    base_colors = sns.color_palette('tab20', n_colors=max(20, n_colors))
+    lut = {0: (1, 1, 1, 0)}  # фон прозрачный/белый
+    for i, lab in enumerate(unique):
+        lut[int(lab)] = base_colors[i % len(base_colors)]
+
+    # Преобразуем labels в RGB карту
+    rgb_img = np.zeros((*labels_ws.shape, 3), dtype=float)
+    for lab, color in lut.items():
+        if lab == 0:
+            continue
+        mask = (labels_ws == lab)
+        rgb_img[mask] = color[:3]
+
+    im = ax.imshow(rgb_img, extent=[XI.min(), XI.max(), YI.min(), YI.max()], origin='lower', aspect='equal')
+    ax.set_title(title)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+
+    # Отобразим минимумы поверх
+    if minima_df is not None and {'X', 'Y'}.issubset(minima_df.columns):
+        ax.scatter(minima_df['X'], minima_df['Y'], s=16, c='k', alpha=0.6, label='минимумы')
+        ax.legend(loc='upper right')
+
+    return fig

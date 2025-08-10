@@ -112,6 +112,20 @@ def compute_geometric_features(df, R, R_basin=None, min_neighbors=6,
     gauss_curv = np.zeros(n, dtype=float)
     orientation = np.zeros(n, dtype=float)
 
+    # Дополнительные многошкальные и морфометрические признаки
+    depth_r2 = np.zeros(n, dtype=float)
+    mean_grad_r2 = np.zeros(n, dtype=float)
+    grad_x_r2 = np.zeros(n, dtype=float)
+    grad_y_r2 = np.zeros(n, dtype=float)
+    mean_curv_r2 = np.zeros(n, dtype=float)
+    gauss_curv_r2 = np.zeros(n, dtype=float)
+    k1 = np.zeros(n, dtype=float)
+    k2 = np.zeros(n, dtype=float)
+    shape_index = np.zeros(n, dtype=float)
+    curvedness = np.zeros(n, dtype=float)
+    shape_index_r2 = np.zeros(n, dtype=float)
+    curvedness_r2 = np.zeros(n, dtype=float)
+
     neighbors_R = tree.query_ball_point(coords, r=R)
     neighbors_Rb = tree.query_ball_point(coords, r=R_basin)
     area_circle = pi * (R_basin ** 2)
@@ -188,6 +202,76 @@ def compute_geometric_features(df, R, R_basin=None, min_neighbors=6,
         gauss_curv[i] = K
         orientation[i] = atan2(zy, zx) if not (np.isnan(zx) or np.isnan(zy)) else 0.0
 
+        # Главные кривизны, индекс формы и кривизна (curvedness)
+        disc = H*H - K
+        if disc < 0:
+            disc = 0.0
+        root = np.sqrt(disc)
+        k1_i = H + root
+        k2_i = H - root
+        # Упорядочим так, чтобы |k2| >= |k1| (не строго критично)
+        if abs(k1_i) > abs(k2_i):
+            k1_i, k2_i = k2_i, k1_i
+        k1[i] = k1_i
+        k2[i] = k2_i
+        denom = (k2_i - k1_i)
+        if abs(denom) < EPS:
+            shape_index[i] = 0.0
+        else:
+            shape_index[i] = (2.0 / pi) * np.arctan((k2_i + k1_i) / denom)
+        curvedness[i] = np.sqrt(0.5 * (k1_i*k1_i + k2_i*k2_i))
+
+        # Многошкальная оценка (используем R_basin как вторую шкалу)
+        idx_rb = [j for j in neighbors_Rb[i] if j != i]
+        if len(idx_rb) < max(3, min_neighbors):
+            requested_k2 = max(min_neighbors + 1, len(idx_rb) + 1)
+            requested_k2 = min(requested_k2, n)
+            d2, id2 = tree.query(coords[i], k=requested_k2)
+            id2 = np.atleast_1d(id2).ravel().tolist()
+            idx_rb = [j for j in id2 if int(j) != i][:max(3, min_neighbors)]
+        idx_rb = np.array(idx_rb, dtype=int)
+        if idx_rb.size > 0:
+            neigh_z_rb = zs[idx_rb]
+            depth2 = np.mean(neigh_z_rb) - zs[i]
+            depth_r2[i] = depth2 if depth2 > 0 else 0.0
+            xs2 = coords[idx_rb, 0] - coords[i, 0]
+            ys2 = coords[idx_rb, 1] - coords[i, 1]
+            zs2 = neigh_z_rb.copy()
+            xs2 = np.append(xs2, 0.0)
+            ys2 = np.append(ys2, 0.0)
+            zs2 = np.append(zs2, zs[i])
+            try:
+                if xs2.size >= 6:
+                    A2, B2, C2, D2, E2, F2 = fit_quadratic_local(xs2, ys2, zs2)
+                else:
+                    Xlin2 = np.column_stack([xs2, ys2, np.ones_like(xs2)])
+                    a2, b2, c2 = lstsq(Xlin2, zs2, rcond=None)[0]
+                    A2 = B2 = C2 = 0.0
+                    D2, E2, F2 = a2, b2, c2
+            except Exception:
+                A2 = B2 = C2 = D2 = E2 = F2 = 0.0
+            zx2, zy2, H2, K2 = surface_curvatures_from_coeffs(A2, B2, C2, D2, E2, F2)
+            grad_x_r2[i] = zx2
+            grad_y_r2[i] = zy2
+            mean_grad_r2[i] = np.sqrt(zx2*zx2 + zy2*zy2)
+            mean_curv_r2[i] = H2
+            gauss_curv_r2[i] = K2
+            disc2 = H2*H2 - K2
+            if disc2 < 0:
+                disc2 = 0.0
+            root2 = np.sqrt(disc2)
+            k1_2 = H2 + root2
+            k2_2 = H2 - root2
+            if abs(k1_2) > abs(k2_2):
+                k1_2, k2_2 = k2_2, k1_2
+            denom2 = (k2_2 - k1_2)
+            if abs(denom2) < EPS:
+                shape_index_r2[i] = 0.0
+                curvedness_r2[i] = np.sqrt(0.5 * (k1_2*k1_2 + k2_2*k2_2))
+            else:
+                shape_index_r2[i] = (2.0 / pi) * np.arctan((k2_2 + k1_2) / denom2)
+                curvedness_r2[i] = np.sqrt(0.5 * (k1_2*k1_2 + k2_2*k2_2))
+
     out = pd.DataFrame({
         'depth': depth,
         'basin_count': basin_count,
@@ -197,7 +281,20 @@ def compute_geometric_features(df, R, R_basin=None, min_neighbors=6,
         'grad_y': grad_y,
         'mean_curvature': mean_curv,
         'gauss_curvature': gauss_curv,
-        'orientation': orientation
+        'orientation': orientation,
+        # морфометрия и многошкальные признаки
+        'k1': k1,
+        'k2': k2,
+        'shape_index': shape_index,
+        'curvedness': curvedness,
+        'depth_r2': depth_r2,
+        'mean_grad_r2': mean_grad_r2,
+        'grad_x_r2': grad_x_r2,
+        'grad_y_r2': grad_y_r2,
+        'mean_curvature_r2': mean_curv_r2,
+        'gauss_curvature_r2': gauss_curv_r2,
+        'shape_index_r2': shape_index_r2,
+        'curvedness_r2': curvedness_r2
     }, index=df.index)
 
     # уберём NaN/inf, если что
